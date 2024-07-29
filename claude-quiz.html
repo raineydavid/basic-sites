@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude API Workshop Quiz and Python IDE</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.22.1/full/pyodide.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
+</head>
+<body class="bg-[#f0eee5] dark:bg-gray-800 text-gray-800 dark:text-gray-200 transition-colors duration-200">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-8 text-center">Claude API Workshop Quiz and Python IDE</h1>
+        <div class="max-w-4xl mx-auto">
+            <div id="quiz-container" class="mb-8">
+                <div id="question" class="mb-4 text-xl"></div>
+                <div id="choices" class="mb-4"></div>
+                <div id="explanation" class="mb-4 hidden"></div>
+                <div id="timer" class="mb-4 text-xl font-bold"></div>
+                <button id="submit" class="bg-[#ba5b38] hover:bg-[#a04d2e] text-white font-bold py-2 px-4 rounded">Submit</button>
+                <button id="next" class="bg-[#ba5b38] hover:bg-[#a04d2e] text-white font-bold py-2 px-4 rounded hidden">Next</button>
+            </div>
+            <div id="ide-container" class="mb-8">
+                <h2 class="text-2xl font-bold mb-4">Python IDE</h2>
+                <textarea id="code" class="w-full h-48 mb-4"></textarea>
+                <button id="run-code" class="bg-[#ba5b38] hover:bg-[#a04d2e] text-white font-bold py-2 px-4 rounded">Run Code</button>
+                <pre id="output" class="mt-4 p-4 bg-white dark:bg-gray-700 rounded"></pre>
+            </div>
+        </div>
+        <div class="mt-8 text-center">
+            <button id="darkModeToggle" class="bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 font-bold py-2 px-4 rounded">Toggle Dark Mode</button>
+        </div>
+    </div>
+
+    <script>
+        const questions = [
+            {
+                question: "What is the first step to authenticate your requests to the Claude API?",
+                choices: [
+                    "Create a GitHub account",
+                    "Obtain an API key",
+                    "Install Python",
+                    "Download the Claude application"
+                ],
+                correctAnswer: 1,
+                explanation: "To authenticate your requests to the Claude API, you need to obtain an API key. The notebook states: 'To authenticate your requests to the Claude API, you'll need an API key.'"
+            },
+            {
+                question: "Where can you find the API settings page to create an API key?",
+                choices: [
+                    "In the Claude mobile app",
+                    "On the Anthropic homepage",
+                    "By clicking on your profile icon and selecting 'API Keys'",
+                    "In your email inbox"
+                ],
+                correctAnswer: 2,
+                explanation: "The API settings page can be found by clicking on your profile icon and selecting 'API Keys'. The notebook mentions: 'You can find this page by clicking on your profile icon in the top-right corner and selecting \"API Keys\" from the dropdown menu.'"
+            },
+            {
+                question: "What is the recommended way to store your API key?",
+                choices: [
+                    "In a public GitHub repository",
+                    "In a .env file",
+                    "As a hardcoded value in your Python scripts",
+                    "On a sticky note on your monitor"
+                ],
+                correctAnswer: 1,
+                explanation: "The recommended way to store your API key is in a .env file. The notebook states: 'One common approach is to store the API key in a .env file and load it using the python-dotenv package.'"
+            },
+            {
+                question: "Which Python package is used to load the API key from the .env file?",
+                choices: [
+                    "requests",
+                    "json",
+                    "os",
+                    "python-dotenv"
+                ],
+                correctAnswer: 3,
+                explanation: "The python-dotenv package is used to load the API key from the .env file. The notebook instructs: 'Install the python-dotenv package by running the following command in your terminal or notebook.'"
+            },
+            {
+                question: "What is the main entry point for interacting with the Claude API?",
+                choices: [
+                    "The API key",
+                    "The client object",
+                    "The .env file",
+                    "The messages.create() method"
+                ],
+                correctAnswer: 1,
+                explanation: "The main entry point for interacting with the Claude API is the client object. The notebook states: 'The first step is to create a client object, which serves as the main entry point for interacting with the API.'"
+            }
+        ];
+
+        let currentQuestion = 0;
+        let score = 0;
+        let timer;
+        let timeLeft = 30;
+
+        const questionEl = document.getElementById('question');
+        const choicesEl = document.getElementById('choices');
+        const explanationEl = document.getElementById('explanation');
+        const submitBtn = document.getElementById('submit');
+        const nextBtn = document.getElementById('next');
+        const timerEl = document.getElementById('timer');
+
+        function loadQuestion() {
+            const question = questions[currentQuestion];
+            questionEl.textContent = question.question;
+            choicesEl.innerHTML = '';
+            question.choices.forEach((choice, index) => {
+                const button = document.createElement('button');
+                button.textContent = choice;
+                button.classList.add('block', 'w-full', 'text-left', 'bg-white', 'dark:bg-gray-700', 'border', 'border-gray-300', 'dark:border-gray-600', 'rounded', 'p-2', 'mb-2', 'hover:bg-gray-100', 'dark:hover:bg-gray-600');
+                button.addEventListener('click', () => selectChoice(index));
+                choicesEl.appendChild(button);
+            });
+            explanationEl.classList.add('hidden');
+            submitBtn.classList.remove('hidden');
+            nextBtn.classList.add('hidden');
+            timeLeft = 30;
+            startTimer();
+        }
+
+        function selectChoice(index) {
+            const buttons = choicesEl.getElementsByTagName('button');
+            for (let button of buttons) {
+                button.classList.remove('bg-blue-500', 'text-white');
+            }
+            buttons[index].classList.add('bg-blue-500', 'text-white');
+        }
+
+        function checkAnswer() {
+            const selectedButton = choicesEl.querySelector('.bg-blue-500');
+            if (!selectedButton) return;
+
+            const selectedAnswer = Array.from(choicesEl.children).indexOf(selectedButton);
+            const question = questions[currentQuestion];
+
+            if (selectedAnswer === question.correctAnswer) {
+                score++;
+                selectedButton.classList.add('bg-green-500');
+            } else {
+                selectedButton.classList.add('bg-red-500');
+                choicesEl.children[question.correctAnswer].classList.add('bg-green-500');
+            }
+
+            explanationEl.textContent = question.explanation;
+            explanationEl.classList.remove('hidden');
+            submitBtn.classList.add('hidden');
+            nextBtn.classList.remove('hidden');
+            clearInterval(timer);
+        }
+
+        function nextQuestion() {
+            currentQuestion++;
+            if (currentQuestion < questions.length) {
+                loadQuestion();
+            } else {
+                showResult();
+            }
+        }
+
+        function showResult() {
+            questionEl.textContent = `Quiz completed! Your score: ${score}/${questions.length}`;
+            choicesEl.innerHTML = '';
+            explanationEl.classList.add('hidden');
+            submitBtn.classList.add('hidden');
+            nextBtn.classList.add('hidden');
+            timerEl.classList.add('hidden');
+        }
+
+        function startTimer() {
+            timerEl.textContent = `Time left: ${timeLeft}s`;
+            timer = setInterval(() => {
+                timeLeft--;
+                timerEl.textContent = `Time left: ${timeLeft}s`;
+                if (timeLeft === 0) {
+                    clearInterval(timer);
+                    checkAnswer();
+                }
+            }, 1000);
+        }
+
+        submitBtn.addEventListener('click', checkAnswer);
+        nextBtn.addEventListener('click', nextQuestion);
+
+        const darkModeToggle = document.getElementById('darkModeToggle');
+        darkModeToggle.addEventListener('click', () => {
+            document.body.classList.toggle('dark');
+            editor.setOption("theme", document.body.classList.contains('dark') ? "darcula" : "default");
+        });
+
+        loadQuestion();
+
+        // Python IDE
+        let pyodide;
+        const output = document.getElementById('output');
+        const runCodeBtn = document.getElementById('run-code');
+
+        const editor = CodeMirror.fromTextArea(document.getElementById("code"), {
+            mode: "python",
+            theme: "default",
+            lineNumbers: true
+        });
+
+        editor.setValue(`from anthropic import Anthropic
+
+# Replace 'your-api-key' with your actual API key
+client = Anthropic(api_key='your-api-key')
+
+message = client.messages.create(
+    model="claude-3-haiku-20240307",
+    max_tokens=1000,
+    messages=[
+        {"role": "user", "content": "Hello, Claude! How are you today?"}
+    ]
+)
+
+print(message.content[0].text)
+`);
+
+        async function initPyodide() {
+            pyodide = await loadPyodide();
+            await pyodide.loadPackage("micropip");
+            await pyodide.runPythonAsync(`
+                import micropip
+                await micropip.install('anthropic')
+            `);
+        }
+
+        runCodeBtn.addEventListener('click', async () => {
+            if (!pyodide) {
+                output.textContent = "Initializing Python environment...";
+                await initPyodide();
+            }
+            
+            const code = editor.getValue();
+            output.textContent = "Running...";
+            
+            try {
+                const result = await pyodide.runPythonAsync(code);
+                output.textContent = result;
+            } catch (error) {
+                output.textContent = "Error: " + error.message;
+            }
+        });
+
+    </script>
+</body>
+</html>
